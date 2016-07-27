@@ -1,0 +1,13 @@
+package br.com.producer.launcher;
+
+import br.com.producer.implementation.ProducerMessage;
+
+public class ProducerMessageLauncher {
+	public static void main(String[] args) {
+		try {
+			new ProducerMessage().start();
+		} catch (Exception e) {
+			System.exit(99);
+		}
+	}
+}
