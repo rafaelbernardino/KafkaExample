@@ -67,38 +67,16 @@ public class ProducerMessage {
 
 							if (mapData != null && mapData.size() > 0) {
 								sb = new StringBuilder();
-								sb.append(mapData.get("data"));
+								sb.append(mapData.get("campo_01"));
 								sb.append(";");
-								sb.append(mapData.get("hora"));
+								sb.append(mapData.get("campo_02"));
 								sb.append(";");
-								sb.append(mapData.get("cartao"));
+								sb.append(mapData.get("campo_03"));
 								sb.append(";");
-								sb.append(mapData.get("valor"));
+								sb.append(mapData.get("campo_04"));
 								sb.append(";");
-								sb.append(mapData.get("aut"));
-								sb.append(";");
-								sb.append(mapData.get("rev"));
-								sb.append(";");
-								sb.append(mapData.get("razao"));
-								sb.append(";");
-								sb.append(mapData.get("ec"));
-								sb.append(";");
-								sb.append(mapData.get("pos"));
-								sb.append(";");
-								sb.append(mapData.get("mcc"));
-								sb.append(";");
-								sb.append(mapData.get("moeda_local"));
-								sb.append(";");
-								sb.append(mapData.get("moeda_fat"));
-								sb.append(";");
-								sb.append(mapData.get("id_ec"));
-								sb.append(";");
-								sb.append(mapData.get("codigo_resposta"));
-								sb.append(";");
-								sb.append(mapData.get("hora_coleta_aut"));
-								sb.append(";");
-								sb.append(mapData.get("hora_coleta_ec"));
-
+								sb.append(mapData.get("campo_05"));
+								
 								ProducerRecord<String, String> record = new ProducerRecord<String, String>("br.com.kafkaexample.topic", sb.toString());
 
 								try {
