@@ -1,2 +1,2 @@
 # KafkaExample
-Testes de codificação com Apache Kafka
+Testes de codificação com Apache Kafka e Redis
