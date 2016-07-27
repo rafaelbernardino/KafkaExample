@@ -1,0 +1,195 @@
+package br.com.producer.implementation;
+
+import java.util.Calendar;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.log4j.Logger;
+
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.exceptions.JedisConnectionException;
+import br.com.merx.utils.DateUtils;
+
+/**
+ * Producer busca  dados no Redis para enviá-los ao Kafka 
+ * @author Rafael Bernardino
+ * @since 06/2016
+ */
+public class ProducerMessage {
+	Logger logger = Logger.getLogger(ProducerMessage.class.getName());
+	Properties properties = new Properties();
+	KafkaProducer<String, String> producer;
+	Jedis jedis;
+	int countErrorRedis = 0;
+
+	public ProducerMessage() {
+		try {
+			properties.put("request.required.acks", "1");
+			properties.put("bootstrap.servers", "server:port");
+			properties.put("serializer.class", "kafka.serializer.StringEncoder");
+			properties.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+			properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+			producer = new KafkaProducer<String, String>(properties);
+		} catch (Exception e) {
+			logger.error("Erro ao criar objeto do producer", e);
+		}
+	}
+
+	public void start() {
+		logger.info("START do producerMessage");
+		
+		try {
+			StringBuilder sb = null;
+			Calendar calStart = Calendar.getInstance();
+			
+			while (true) {
+				jedis = new Jedis("server", portNumber);
+				logger.info("INICIO ProducerMessage");
+				long qtde = 0l;
+				jedis.connect();
+			
+				//Buscar todas as chaves disponíveis que contenham o início 'hash:sp:'
+				Set<String> listKeys = jedis.keys("hash:sp:*");
+				countErrorRedis = 0;
+
+				if (listKeys != null && listKeys.size() > 0) {
+					logger.info("LOTE DE CHAVES QTDE: " + listKeys.size());
+					qtde = listKeys.size();
+
+					for (String item : listKeys) {
+						if (validarRegistroRepetido(item)) {
+							logger.info("KEY: " + item);
+
+							Map<String, String> mapData = jedis.hgetAll(item);
+
+							if (mapData != null && mapData.size() > 0) {
+								sb = new StringBuilder();
+								sb.append(mapData.get("data"));
+								sb.append(";");
+								sb.append(mapData.get("hora"));
+								sb.append(";");
+								sb.append(mapData.get("cartao"));
+								sb.append(";");
+								sb.append(mapData.get("valor"));
+								sb.append(";");
+								sb.append(mapData.get("aut"));
+								sb.append(";");
+								sb.append(mapData.get("rev"));
+								sb.append(";");
+								sb.append(mapData.get("razao"));
+								sb.append(";");
+								sb.append(mapData.get("ec"));
+								sb.append(";");
+								sb.append(mapData.get("pos"));
+								sb.append(";");
+								sb.append(mapData.get("mcc"));
+								sb.append(";");
+								sb.append(mapData.get("moeda_local"));
+								sb.append(";");
+								sb.append(mapData.get("moeda_fat"));
+								sb.append(";");
+								sb.append(mapData.get("id_ec"));
+								sb.append(";");
+								sb.append(mapData.get("codigo_resposta"));
+								sb.append(";");
+								sb.append(mapData.get("hora_coleta_aut"));
+								sb.append(";");
+								sb.append(mapData.get("hora_coleta_ec"));
+
+								ProducerRecord<String, String> record = new ProducerRecord<String, String>("br.com.kafkaexample.topic", sb.toString());
+
+								try {
+									//Se apresentar exception no producer, o processamento irá para o próximo registro e não irá deletar do redis
+									producer.send(record).get();
+									logger.info("Registro inserido no Kafka ProdMsg: " + sb.toString());
+								} catch (Exception e) {
+									logger.error("Erro ao enviar mensagem para Kafka", e);
+									continue;
+								}
+
+								//Após processar os dados da chave para o Kafka, deletar do Redis
+								jedis.del(item);
+
+								sb = null;
+							}
+						} else {
+							jedis.del(item);
+						}
+					}
+
+					logger.info("FIM DO BLOCO DE CHAVES");
+					logger.info("===QTDE PROCESSADO NO BLOCO: " + qtde);
+				} else {
+					logger.info("NENHUMA CHAVE ENCONTRADA");
+				}
+
+				if (jedis != null) {
+					jedis.close();
+				}
+				
+				if ((DateUtils.getMinutosDiferenca(Calendar.getInstance().getTime(), calStart.getTime())) >= 90) {
+					instancieProducer();
+					calStart = Calendar.getInstance();
+				}
+				logger.info("FIM ProducerMessage");
+			}
+		} catch (JedisConnectionException jedisException) { 
+			try {
+				logger.error("Tentativas de conexao com REDIS: " + countErrorRedis);
+				if (countErrorRedis < 3) {
+					Thread.sleep(2000);
+				} else {
+					Thread.sleep(5000);
+					logger.error("servico do REDIS indisponivel no momento", jedisException);
+				}
+				countErrorRedis++;
+				start();
+			} catch (InterruptedException e) {
+				logger.error("erro no thread sleep", e);
+			}
+		} catch (Exception e) { 
+			System.exit(99);
+			logger.error("Erro inesperado no producer ProducerMessage", e);
+		} finally {
+			if (jedis != null) jedis.close();
+			if (producer != null) producer.close();
+			logger.info("Producer finalizado");
+		}
+	}
+	
+	private void instancieProducer() {
+		if (producer != null) {
+			producer.close();
+			producer = null;
+		}
+		
+		producer = new KafkaProducer<String, String>(properties);
+		logger.info("instancia do producer foi recriada");
+	}
+	
+	/**
+	 * Método verifica se o registro que está em processamento já foi processado anteriormente.
+	 * @param item
+	 * @return
+	 * @throws Exception
+	 */
+	private boolean validarRegistroRepetido(String item) throws Exception {
+		String hashProcessado = "hash:processado:" + item.split(":")[2];
+		
+		Map<String, String> register = jedis.hgetAll(hashProcessado);
+		
+		//Caso não tenha sido processado anteriormente, insiro a chave em um outro hash e coloco um período para expirar
+		if (register == null || register.size() < 1) {
+			jedis.hset(hashProcessado, "property", "processado");
+			//Indico que essa chave irá expirar em 15min
+			jedis.expire(hashProcessado, 900);
+			return true;
+		}
+		
+		logger.info("registro ja processado anteriormente " + item);
+		return false;
+	}
+}
